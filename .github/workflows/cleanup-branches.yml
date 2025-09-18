@@ -1,0 +1,133 @@
+name: Branch Cleanup
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run mode (show what would be deleted)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+  schedule:
+    # 毎週日曜日 2AM UTC にクリーンアップ実行
+    - cron: '0 2 * * 0'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  cleanup-merged-branches:
+    name: Clean up merged branches
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 全履歴を取得
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clean up merged branches
+        run: |
+          echo "🧹 Starting branch cleanup..."
+
+          # DRY_RUN モード設定
+          DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
+
+          # 保護ブランチ定義
+          PROTECTED_BRANCHES="main develop master"
+
+          # リモートの最新情報を取得
+          git fetch --all --prune
+
+          echo "📋 Protected branches: $PROTECTED_BRANCHES"
+          echo "🔍 Dry run mode: $DRY_RUN"
+          echo
+
+          # マージ済みブランチを検出
+          MERGED_BRANCHES=$(git branch -r --merged origin/develop | \
+            grep -v "origin/develop" | \
+            grep -v "origin/main" | \
+            grep -v "origin/master" | \
+            grep -v "origin/HEAD" | \
+            sed 's/origin\///' | \
+            tr -d ' ')
+
+          if [ -z "$MERGED_BRANCHES" ]; then
+            echo "✅ No merged branches found to clean up"
+            exit 0
+          fi
+
+          echo "🗑️  Found merged branches to clean up:"
+          for branch in $MERGED_BRANCHES; do
+            echo "  - $branch"
+          done
+          echo
+
+          # ブランチ削除実行
+          for branch in $MERGED_BRANCHES; do
+            # 保護ブランチかチェック
+            is_protected=false
+            for protected in $PROTECTED_BRANCHES; do
+              if [ "$branch" = "$protected" ]; then
+                is_protected=true
+                break
+              fi
+            done
+
+            if [ "$is_protected" = true ]; then
+              echo "🔒 Skipping protected branch: $branch"
+              continue
+            fi
+
+            # feature/ hotfix/ bugfix/ で始まるブランチのみ削除
+            if [[ "$branch" =~ ^(feature|hotfix|bugfix)/ ]]; then
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "🔍 [DRY RUN] Would delete: $branch"
+              else
+                echo "🗑️  Deleting: $branch"
+                if git push origin --delete "$branch" 2>/dev/null; then
+                  echo "✅ Successfully deleted: $branch"
+                else
+                  echo "⚠️  Failed to delete: $branch (may already be deleted)"
+                fi
+              fi
+            else
+              echo "⏭️  Skipping non-feature branch: $branch"
+            fi
+          done
+
+          echo
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "🔍 Dry run completed - no branches were actually deleted"
+          else
+            echo "✅ Branch cleanup completed"
+          fi
+
+  cleanup-notification:
+    name: Notify cleanup results
+    runs-on: ubuntu-latest
+    needs: cleanup-merged-branches
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+
+    steps:
+      - name: Create cleanup summary
+        run: |
+          echo "## 🧹 Branch Cleanup Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ needs.cleanup-merged-branches.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Time:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.cleanup-merged-branches.result }}" = "success" ]; then
+            echo "✅ Cleanup completed successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Cleanup encountered issues" >> $GITHUB_STEP_SUMMARY
+          fi
