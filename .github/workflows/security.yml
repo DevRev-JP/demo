@@ -1,0 +1,43 @@
+name: Security Scan
+on:
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '0 2 * * 1'  # 毎週月曜 2AM UTC
+  workflow_dispatch:
+
+jobs:
+  dependency-scan:
+    name: Dependency Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Frontend Security Scan
+        if: hashFiles('**/package.json') != ''
+        run: |
+          # フロントエンドがある場合
+          if [[ -f "frontend/package.json" ]]; then
+            cd frontend && npm ci && npm audit --audit-level=moderate
+          elif [[ -f "package.json" ]]; then
+            npm ci && npm audit --audit-level=moderate
+          fi
+
+      - name: Backend Security Scan (Python)
+        if: hashFiles('**/requirements.txt') != ''
+        run: |
+          pip install safety
+          # バックエンドがある場合
+          if [[ -f "backend/requirements.txt" ]]; then
+            safety check -r backend/requirements.txt
+          elif [[ -f "requirements.txt" ]]; then
+            safety check -r requirements.txt
+          fi
+
+      - name: CodeQL Analysis
+        uses: github/codeql-action/init@v2
+        with:
+          languages: javascript,python
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2

@@ -1,0 +1,24 @@
+name: Auto Add to Project
+on:
+  issues:
+    types: [opened, reopened]
+  pull_request:
+    types: [opened, reopened]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  projects: write
+
+jobs:
+  add-to-project:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add to Project
+        uses: actions/add-to-project@v0.4.0
+        with:
+          project-url: https://github.com/orgs/DevRev-JP/projects/1
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          labeled: type:bug,type:feature,type:chore
+          label-operator: OR
