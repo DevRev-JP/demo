@@ -1,0 +1,24 @@
+name: "✨ Feature"
+description: 機能要望
+title: "[Feat] 簡潔なタイトル"
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: 背景・目的
+      placeholder: なぜ必要か、誰の課題か
+    validations:
+      required: true
+  - type: textarea
+    id: req
+    attributes:
+      label: 要件
+      placeholder: 受け入れ条件（AC）を箇条書きで
+    validations:
+      required: true
+  - type: textarea
+    id: approach
+    attributes:
+      label: アプローチ案
+      placeholder: 実装方針があれば
